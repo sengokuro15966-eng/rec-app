@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1117">
+<title>録音文字起こし</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: -apple-system, 'Hiragino Sans', sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 20px 48px;
+  }
+
+  h1 { font-size: 1.3rem; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .subtitle { font-size: 0.8rem; color: #555; margin-bottom: 36px; }
+
+  /* ── ログイン画面 ── */
+  #login-view { width: 100%; max-width: 480px; }
+  #login-view h2 { font-size: 1rem; color: #fff; margin-bottom: 16px; text-align: center; }
+  #login-view .login-note { font-size: 0.78rem; color: #666; margin-bottom: 20px; line-height: 1.6; }
+  .login-field { margin-bottom: 14px; }
+  .login-field label { display: block; font-size: 0.78rem; color: #999; margin-bottom: 6px; }
+  .login-field input {
+    width: 100%; padding: 12px 14px;
+    background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px;
+    color: #e0e0e0; font-size: 1rem; outline: none;
+    -webkit-appearance: none;
+  }
+  .login-field input:focus { border-color: #5c6bc0; }
+  #btn-login {
+    width: 100%; padding: 14px; margin-top: 10px;
+    background: #3949ab; color: #fff; border: none; border-radius: 12px;
+    font-size: 0.95rem; font-weight: 700; cursor: pointer;
+  }
+  #btn-login:disabled { opacity: 0.5; }
+  #login-error {
+    margin-top: 10px; padding: 10px 14px;
+    background: #4a1f22; color: #ff8a80; border-radius: 10px;
+    font-size: 0.82rem; display: none;
+  }
+
+  /* ── ヘッダー行（ログアウト） ── */
+  .header-row { width: 100%; max-width: 600px; display: flex; justify-content: flex-end; margin-bottom: 8px; }
+  #btn-logout {
+    background: #1e1e2e; color: #888; border: 1px solid #333;
+    padding: 6px 12px; border-radius: 8px; font-size: 0.75rem; cursor: pointer;
+  }
+
+  /* ── 録音ボタン ── */
+  #btn-record {
+    width: 160px; height: 160px;
+    border-radius: 50%; border: none;
+    background: #e53935; color: #fff;
+    cursor: pointer;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 8px 32px rgba(229,57,53,0.4);
+    transition: background 0.2s, transform 0.1s;
+    user-select: none; -webkit-user-select: none;
+  }
+  #btn-record:active { transform: scale(0.94); }
+  #btn-record.recording {
+    background: #424242;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    animation: pulse 1.4s infinite;
+  }
+  #btn-record .icon { font-size: 2.6rem; line-height: 1; }
+  #btn-record .label { font-size: 0.9rem; font-weight: 700; letter-spacing: 0.05em; }
+
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(229,57,53,0.5); }
+    60%  { box-shadow: 0 0 0 28px rgba(229,57,53,0); }
+    100% { box-shadow: 0 0 0 0   rgba(229,57,53,0); }
+  }
+
+  #timer {
+    font-size: 2rem; font-weight: 300;
+    color: #ef9a9a; letter-spacing: 0.1em;
+    margin: 20px 0 8px;
+    min-height: 2.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #status {
+    font-size: 0.85rem; color: #666;
+    min-height: 1.4em; text-align: center;
+    margin-bottom: 28px; padding: 0 16px;
+    white-space: pre-line; line-height: 1.7;
+  }
+  #status.active      { color: #ef9a9a; font-weight: 600; }
+  #status.processing  { color: #ffcc02; font-weight: 600; }
+  #status.ok          { color: #81c784; font-weight: 600; }
+  #status.error       { color: #e57373; font-weight: 600; }
+
+  /* ── タブ切替 ── */
+  .tabs {
+    width: 100%; max-width: 600px;
+    display: flex; border-bottom: 1px solid #2a2d3a;
+    margin-bottom: 16px;
+  }
+  .tab-btn {
+    flex: 1; padding: 10px 4px;
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: #666; font-size: 0.88rem; font-weight: 600;
+    cursor: pointer; transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn.active { color: #7986cb; border-bottom-color: #7986cb; }
+
+  /* ── テキストエリア ── */
+  .section { width: 100%; max-width: 600px; margin-bottom: 24px; }
+  .section-title {
+    font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.12em; color: #555; margin-bottom: 8px;
+  }
+
+  .text-panel { display: none; }
+  .text-panel.active { display: block; }
+
+  textarea {
+    width: 100%; min-height: 200px;
+    background: #1a1d27; border: 1px solid #2a2d3a;
+    border-radius: 14px; color: #e0e0e0;
+    font-size: 1rem; line-height: 1.75; padding: 16px;
+    resize: vertical; outline: none;
+    transition: border 0.2s;
+    -webkit-appearance: none;
+    white-space: pre-wrap;
+  }
+  textarea:focus { border-color: #5c6bc0; }
+  #minutes { color: #c8e6c9; border-color: #1b5e20; }
+  #minutes:focus { border-color: #388e3c; }
+
+  .action-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .btn {
+    flex: 1; min-width: 90px;
+    padding: 14px 10px; border-radius: 12px; border: none;
+    font-size: 0.88rem; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.96); opacity: 0.85; }
+  .btn-save  { background: #3949ab; color: #fff; }
+  .btn-copy  { background: #1e1e2e; color: #aaa; border: 1px solid #333; }
+  .btn-clear { background: #1e1e2e; color: #aaa; border: 1px solid #333; }
+
+  #file-list { width: 100%; max-width: 600px; }
+  .file-item {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #1a1d27; border: 1px solid #2a2d3a;
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
+    font-size: 0.84rem;
+  }
+  .file-info { display: flex; flex-direction: column; gap: 3px; }
+  .file-date { color: #666; font-size: 0.72rem; }
+  .file-name { color: #ccc; }
+  .file-link a { color: #7986cb; text-decoration: none; font-size: 0.82rem; }
+  .no-files { color: #444; font-size: 0.88rem; padding: 12px 0; }
+
+  #progress-wrap {
+    width: 100%; max-width: 600px;
+    background: #1a1d27; border-radius: 8px;
+    overflow: hidden; margin-bottom: 20px;
+    display: none;
+  }
+  #progress-bar {
+    height: 4px; background: #5c6bc0;
+    width: 60%;
+    animation: indeterminate 1.5s infinite linear;
+  }
+  @keyframes indeterminate {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(270%); }
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ───────── ログイン画面 ───────── -->
+<div id="login-view">
+  <h1>🔐 録音文字起こし</h1>
+  <div class="subtitle">初回ログイン</div>
+  <h2>アクセス情報を入力してください</h2>
+  <div class="login-note">
+    社長から提供されたAPI URLとパスワードを入力してください。<br>
+    入力情報はこの端末にのみ保存されます。
+  </div>
+  <div class="login-field">
+    <label for="input-api-url">GAS API URL</label>
+    <input id="input-api-url" type="url" placeholder="https://script.google.com/macros/s/xxx/exec" autocomplete="off">
+  </div>
+  <div class="login-field">
+    <label for="input-password">パスワード</label>
+    <input id="input-password" type="password" placeholder="パスワード" autocomplete="current-password">
+  </div>
+  <button id="btn-login" onclick="doLogin()">ログイン</button>
+  <div id="login-error"></div>
+</div>
+
+<!-- ───────── メイン画面 ───────── -->
+<div id="main-view" class="hidden" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+  <div class="header-row">
+    <button id="btn-logout" onclick="doLogout()">ログアウト</button>
+  </div>
+
+  <h1>🎙️ 録音文字起こし</h1>
+  <div class="subtitle">Powered by OpenAI Whisper + GPT-4o-mini</div>
+
+  <button id="btn-record" onclick="toggleRecording()">
+    <span class="icon" id="btn-icon">🔴</span>
+    <span class="label" id="btn-label">録音開始</span>
+  </button>
+
+  <div id="timer"></div>
+  <div id="status">ボタンを押して録音を開始</div>
+
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('transcript')">📝 文字起こし</button>
+    <button class="tab-btn" onclick="switchTab('minutes')">📋 議事録</button>
+  </div>
+
+  <div class="section">
+    <div class="text-panel active" id="panel-transcript">
+      <textarea id="transcript" placeholder="録音後、自動で文字起こしされます。&#10;手動編集もできます。"></textarea>
+      <div class="action-row">
+        <button class="btn btn-save"  onclick="saveManualText()">💾 保存</button>
+        <button class="btn btn-copy"  onclick="copyText('transcript')">📋 コピー</button>
+        <button class="btn btn-clear" onclick="clearText('transcript')">🗑️ クリア</button>
+      </div>
+    </div>
+    <div class="text-panel" id="panel-minutes">
+      <textarea id="minutes" placeholder="録音後、自動で議事録が生成されます。" readonly></textarea>
+      <div class="action-row">
+        <button class="btn btn-copy"  onclick="copyText('minutes')">📋 コピー</button>
+        <button class="btn btn-clear" onclick="clearText('minutes')">🗑️ クリア</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">保存済み（最新20件）</div>
+    <div id="file-list"><div class="no-files">読み込み中...</div></div>
+  </div>
+</div>
+
+<script>
+// ====================================================
+// 設定・状態
+// ====================================================
+const STORAGE_KEY_API_URL   = 'rec_v4_api_url';
+const STORAGE_KEY_PASSWORD  = 'rec_v4_password';
+const ORIGIN = window.location.origin; // 例: https://yusuke-satou.github.io
+
+let API_URL  = localStorage.getItem(STORAGE_KEY_API_URL)  || '';
+let PASSWORD = localStorage.getItem(STORAGE_KEY_PASSWORD) || '';
+
+let mediaRecorder = null;
+let audioChunks  = [];
+let isRecording  = false;
+let timerInterval = null;
+let seconds = 0;
+const MAX_SECONDS = 600;
+
+// ====================================================
+// 起動時: ログイン状態判定
+// ====================================================
+window.addEventListener('DOMContentLoaded', () => {
+  if (API_URL && PASSWORD) {
+    showMain();
+    loadFileList();
+  } else {
+    showLogin();
+  }
+});
+
+function showLogin() {
+  document.getElementById('login-view').classList.remove('hidden');
+  document.getElementById('main-view').classList.add('hidden');
+}
+function showMain() {
+  document.getElementById('login-view').classList.add('hidden');
+  document.getElementById('main-view').classList.remove('hidden');
+}
+
+// ====================================================
+// 認証・API通信
+// ====================================================
+async function apiCall(action, params) {
+  if (!API_URL || !PASSWORD) {
+    throw new Error('未ログイン');
+  }
+  const body = Object.assign({
+    action: action,
+    password: PASSWORD,
+    origin: ORIGIN
+  }, params || {});
+
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body),
+    redirect: 'follow'
+  });
+  const json = await res.json();
+  if (!json.ok) {
+    if (json.code === 'UNAUTHORIZED') {
+      // 認証失敗 → ログイン画面へ
+      doLogout();
+      throw new Error('認証失敗。再ログインしてください');
+    }
+    throw new Error(json.error || 'API error');
+  }
+  return json;
+}
+
+async function doLogin() {
+  const url  = document.getElementById('input-api-url').value.trim();
+  const pass = document.getElementById('input-password').value;
+  const err  = document.getElementById('login-error');
+  const btn  = document.getElementById('btn-login');
+  err.style.display = 'none';
+
+  if (!url || !pass) { err.textContent = 'URLとパスワードを入力してください'; err.style.display = 'block'; return; }
+  if (!/^https:\/\/script\.google\.com\//.test(url)) {
+    err.textContent = 'GAS の URL 形式ではありません'; err.style.display = 'block'; return;
+  }
+
+  btn.disabled = true; btn.textContent = '接続中...';
+
+  // 一時的にAPI_URL/PASSWORDをセットしてpingテスト
+  API_URL = url; PASSWORD = pass;
+  try {
+    await apiCall('ping', {});
+    // 成功 → 保存してメイン画面へ
+    localStorage.setItem(STORAGE_KEY_API_URL, url);
+    localStorage.setItem(STORAGE_KEY_PASSWORD, pass);
+    showMain();
+    loadFileList();
+  } catch (e) {
+    API_URL = ''; PASSWORD = '';
+    err.textContent = 'ログイン失敗: ' + e.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'ログイン';
+  }
+}
+
+function doLogout() {
+  if (!confirm('ログアウトしますか？')) return;
+  API_URL = ''; PASSWORD = '';
+  localStorage.removeItem(STORAGE_KEY_API_URL);
+  localStorage.removeItem(STORAGE_KEY_PASSWORD);
+  showLogin();
+}
+
+// ====================================================
+// UI ヘルパー
+// ====================================================
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', (i === 0 && name === 'transcript') || (i === 1 && name === 'minutes'));
+  });
+  document.getElementById('panel-transcript').classList.toggle('active', name === 'transcript');
+  document.getElementById('panel-minutes').classList.toggle('active', name === 'minutes');
+}
+function setStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.textContent = msg; el.className = type || '';
+}
+function showProgress(show) {
+  document.getElementById('progress-wrap').style.display = show ? 'block' : 'none';
+}
+function resetBtn() {
+  document.getElementById('btn-record').classList.remove('recording');
+  document.getElementById('btn-icon').textContent  = '🔴';
+  document.getElementById('btn-label').textContent = '録音開始';
+}
+
+// ====================================================
+// 録音
+// ====================================================
+async function toggleRecording() {
+  if (isRecording) { stopRecording(); return; }
+  await startRecording();
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus('このブラウザは録音に対応していません。SafariまたはChromeをお使いください。', 'error');
+    return;
+  }
+  let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    const name = err.name || '';
+    let msg = '';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      msg = '⚠️ マイクが許可されていません。\niPhoneの場合：「設定 → Safari → マイク → このサイトを許可」に変更してから\nページを再読み込みしてボタンを押してください。';
+    } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      msg = 'マイクが見つかりません。';
+    } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+      msg = 'マイクが他のアプリで使用中です。';
+    } else {
+      msg = 'マイクを起動できませんでした（' + (name || err.message) + '）。';
+    }
+    setStatus(msg, 'error'); resetBtn(); return;
+  }
+
+  const candidates = ['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm','audio/ogg',''];
+  let mimeType = '';
+  if (typeof MediaRecorder === 'undefined') {
+    stream.getTracks().forEach(t => t.stop());
+    setStatus('このブラウザはMediaRecorderに対応していません。', 'error'); resetBtn(); return;
+  }
+  for (const t of candidates) {
+    if (t === '' || MediaRecorder.isTypeSupported(t)) { mimeType = t; break; }
+  }
+
+  try {
+    const options = mimeType ? { mimeType } : {};
+    mediaRecorder = new MediaRecorder(stream, options);
+    audioChunks = [];
+    mediaRecorder.onerror = () => {
+      stream.getTracks().forEach(t => t.stop());
+      setStatus('録音中にエラーが発生しました。', 'error');
+      resetBtn(); isRecording = false; stopTimer();
+    };
+    mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = () => { stream.getTracks().forEach(t => t.stop()); processAudio(); };
+    mediaRecorder.start(1000);
+
+    isRecording = true; seconds = 0; startTimer();
+    document.getElementById('btn-record').classList.add('recording');
+    document.getElementById('btn-icon').textContent  = '⏹️';
+    document.getElementById('btn-label').textContent = '録音停止';
+    setStatus('● 録音中... 話してください', 'active');
+  } catch (err) {
+    stream.getTracks().forEach(t => t.stop());
+    setStatus('録音の開始に失敗しました（' + (err.message || err.name) + '）', 'error');
+    resetBtn();
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  isRecording = false; stopTimer();
+  document.getElementById('btn-record').classList.remove('recording');
+  document.getElementById('btn-icon').textContent  = '🔴';
+  document.getElementById('btn-label').textContent = '録音開始';
+  setStatus('⏳ 文字起こし＆議事録生成中... しばらくお待ちください', 'processing');
+  showProgress(true);
+}
+
+function startTimer() {
+  timerInterval = setInterval(() => {
+    seconds++;
+    document.getElementById('timer').textContent = formatTime(seconds);
+    if (seconds >= MAX_SECONDS) stopRecording();
+  }, 1000);
+}
+function stopTimer() {
+  clearInterval(timerInterval);
+  document.getElementById('timer').textContent = '';
+}
+function formatTime(s) {
+  return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}
+
+// ====================================================
+// Whisper + GPT処理（fetch経由）
+// ====================================================
+function processAudio() {
+  const mimeType = audioChunks[0]?.type || 'audio/webm';
+  const blob = new Blob(audioChunks, { type: mimeType });
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const base64 = reader.result.split(',')[1];
+    try {
+      const result = await apiCall('transcribe', {
+        base64Audio: base64,
+        mimeType: mimeType,
+        timestamp: new Date().toISOString()
+      });
+      showProgress(false);
+      document.getElementById('transcript').value = result.transcript || '';
+      document.getElementById('minutes').value    = result.minutes || '';
+      if (result.minutes) switchTab('minutes');
+      setStatus('✅ 完了（文字起こし＋議事録をDriveに保存済み）', 'ok');
+      loadFileList();
+    } catch (e) {
+      showProgress(false);
+      setStatus('エラー: ' + e.message, 'error');
+    }
+  };
+  reader.readAsDataURL(blob);
+}
+
+// ====================================================
+// 手動保存
+// ====================================================
+async function saveManualText() {
+  const text = document.getElementById('transcript').value.trim();
+  if (!text) { setStatus('テキストがありません', 'error'); return; }
+  setStatus('保存中...', '');
+  try {
+    const r = await apiCall('saveText', { text: text, timestamp: new Date().toISOString() });
+    setStatus('✅ 保存完了: ' + r.dateStr + '/' + r.fileName, 'ok');
+    loadFileList();
+  } catch (e) {
+    setStatus('保存失敗: ' + e.message, 'error');
+  }
+}
+
+// ====================================================
+// コピー・クリア
+// ====================================================
+function copyText(id) {
+  const t = document.getElementById(id).value;
+  if (!t) return;
+  navigator.clipboard.writeText(t).then(() => {
+    setStatus('コピーしました', 'ok');
+    setTimeout(() => setStatus('', ''), 2000);
+  }).catch(() => {
+    const el = document.getElementById(id);
+    el.removeAttribute('readonly'); el.select(); document.execCommand('copy');
+    if (id === 'minutes') el.setAttribute('readonly', '');
+    setStatus('コピーしました', 'ok');
+    setTimeout(() => setStatus('', ''), 2000);
+  });
+}
+function clearText(id) {
+  if (!confirm('テキストをクリアしますか？')) return;
+  document.getElementById(id).value = '';
+  setStatus('クリアしました', '');
+}
+
+// ====================================================
+// ファイルリスト
+// ====================================================
+async function loadFileList() {
+  try {
+    const r = await apiCall('listFiles', {});
+    renderFileList(r.files || []);
+  } catch (e) {
+    document.getElementById('file-list').innerHTML = '<div class="no-files">リスト取得失敗: ' + e.message + '</div>';
+  }
+}
+function renderFileList(files) {
+  const el = document.getElementById('file-list');
+  if (!files || files.length === 0) {
+    el.innerHTML = '<div class="no-files">保存済みファイルはありません</div>';
+    return;
+  }
+  el.innerHTML = files.map(f => `
+    <div class="file-item">
+      <div class="file-info">
+        <span class="file-date">📅 ${f.date}</span>
+        <span class="file-name">${f.name}</span>
+      </div>
+      <div class="file-link"><a href="${f.url}" target="_blank">開く →</a></div>
+    </div>`).join('');
+}
+</script>
+</body>
+</html>
