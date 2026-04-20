@@ -102,6 +102,27 @@
   #status.ok          { color: #81c784; font-weight: 600; }
   #status.error       { color: #e57373; font-weight: 600; }
 
+  /* ── 省電力モード（録音中のみ） ── */
+  #btn-power-save {
+    margin-top: 8px; margin-bottom: 20px;
+    padding: 8px 18px;
+    background: transparent; border: 1px solid #2a2d3a; border-radius: 8px;
+    color: #7a7f8a; font-size: 0.8rem; cursor: pointer;
+    display: none;
+  }
+  #power-save-overlay {
+    position: fixed; inset: 0; background: #000; z-index: 10000;
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; color: #333;
+    -webkit-user-select: none; user-select: none;
+  }
+  #power-save-overlay.on { display: flex; }
+  .ps-dot { color: #660000; font-size: 1rem; animation: ps-blink 2s infinite; }
+  .ps-timer { color: #444; font-size: 1.2rem; margin: 10px 0; font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
+  .ps-stop { margin-top: 18px; padding: 10px 24px; background: #1a0a0a; color: #884444; border: 1px solid #443333; border-radius: 8px; font-size: 0.82rem; cursor: pointer; }
+  .ps-hint { margin-top: 28px; color: #1a1a1a; font-size: 0.68rem; }
+  @keyframes ps-blink { 0%,100%{opacity:0.25} 50%{opacity:0.75} }
+
   /* ── タブ切替 ── */
   .tabs {
     width: 100%; max-width: 600px;
@@ -223,6 +244,15 @@
 
   <div id="timer"></div>
   <div id="status">ボタンを押して録音を開始</div>
+  <button id="btn-power-save" onclick="togglePowerSaveMode()">🌙 省電力モード</button>
+
+  <!-- 省電力モードオーバーレイ -->
+  <div id="power-save-overlay" onclick="exitPowerSaveMode()">
+    <div class="ps-dot">●</div>
+    <div class="ps-timer" id="ps-timer">00:00</div>
+    <button class="ps-stop" onclick="event.stopPropagation(); stopRecording(); exitPowerSaveMode();">■ 録音停止</button>
+    <div class="ps-hint">画面をタップで復帰</div>
+  </div>
 
   <div id="progress-wrap"><div id="progress-bar"></div></div>
 
@@ -272,6 +302,35 @@ let isRecording  = false;
 let timerInterval = null;
 let seconds = 0;
 const MAX_SECONDS = 600;
+let wakeLock = null;
+
+// 画面スリープ防止: 録音中は画面を常時ONに保つ
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    }
+  } catch (_) { /* 取得失敗時は無視（録音継続） */ }
+}
+async function releaseWakeLock() {
+  try { if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (_) {}
+}
+// タブ復帰時に再取得（Wake Lockはタブが裏に回ると自動解除される仕様のため）
+document.addEventListener('visibilitychange', async () => {
+  if (isRecording && document.visibilityState === 'visible' && !wakeLock) {
+    await requestWakeLock();
+  }
+});
+
+// 省電力モード: 画面を黒一色にして発光面積を最小化（OLEDで約20〜30%消費減）
+function togglePowerSaveMode() {
+  if (!isRecording) return;
+  const ov = document.getElementById('power-save-overlay');
+  if (ov.classList.contains('on')) exitPowerSaveMode(); else enterPowerSaveMode();
+}
+function enterPowerSaveMode() { document.getElementById('power-save-overlay').classList.add('on'); }
+function exitPowerSaveMode() { document.getElementById('power-save-overlay').classList.remove('on'); }
 
 // ====================================================
 // 起動時: ログイン状態判定
@@ -435,6 +494,7 @@ async function startRecording() {
     audioChunks = [];
     mediaRecorder.onerror = () => {
       stream.getTracks().forEach(t => t.stop());
+      releaseWakeLock();
       setStatus('録音中にエラーが発生しました。', 'error');
       resetBtn(); isRecording = false; stopTimer();
     };
@@ -443,9 +503,11 @@ async function startRecording() {
     mediaRecorder.start(1000);
 
     isRecording = true; seconds = 0; startTimer();
+    await requestWakeLock();
     document.getElementById('btn-record').classList.add('recording');
     document.getElementById('btn-icon').textContent  = '⏹️';
     document.getElementById('btn-label').textContent = '録音停止';
+    document.getElementById('btn-power-save').style.display = 'inline-block';
     setStatus('● 録音中... 話してください', 'active');
   } catch (err) {
     stream.getTracks().forEach(t => t.stop());
@@ -457,6 +519,9 @@ async function startRecording() {
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
   isRecording = false; stopTimer();
+  releaseWakeLock();
+  exitPowerSaveMode();
+  document.getElementById('btn-power-save').style.display = 'none';
   document.getElementById('btn-record').classList.remove('recording');
   document.getElementById('btn-icon').textContent  = '🔴';
   document.getElementById('btn-label').textContent = '録音開始';
@@ -467,7 +532,10 @@ function stopRecording() {
 function startTimer() {
   timerInterval = setInterval(() => {
     seconds++;
-    document.getElementById('timer').textContent = formatTime(seconds);
+    const t = formatTime(seconds);
+    document.getElementById('timer').textContent = t;
+    const ps = document.getElementById('ps-timer');
+    if (ps) ps.textContent = t;
     if (seconds >= MAX_SECONDS) stopRecording();
   }, 1000);
 }
