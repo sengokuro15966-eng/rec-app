@@ -489,7 +489,7 @@ async function startRecording() {
   }
 
   try {
-    const options = mimeType ? { mimeType } : {};
+    const options = mimeType ? { mimeType, audioBitsPerSecond: 32000 } : { audioBitsPerSecond: 32000 };
     mediaRecorder = new MediaRecorder(stream, options);
     audioChunks = [];
     mediaRecorder.onerror = () => {
@@ -563,8 +563,13 @@ function processAudio() {
         timestamp: new Date().toISOString()
       });
       showProgress(false);
-      document.getElementById('transcript').value = result.transcript || '';
+      const transcriptText = result.transcript || '';
+      document.getElementById('transcript').value = transcriptText;
       document.getElementById('minutes').value    = result.minutes || '';
+      if (!transcriptText) {
+        setStatus('⚠️ 文字起こし結果が空でした。音声が認識されなかった可能性があります。録音し直してください。', 'error');
+        return;
+      }
       if (result.minutes) switchTab('minutes');
       setStatus('✅ 完了（文字起こし＋議事録をDriveに保存済み）', 'ok');
       loadFileList();
